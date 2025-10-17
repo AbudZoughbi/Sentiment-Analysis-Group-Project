@@ -56,6 +56,26 @@ def find_peaks(stats_list):
         'most_active': max(stats_list, key=lambda x: x['total'])
     }
 
+def process_aggregation_results(results):
+    """Process MongoDB aggregation results into a nested dictionary"""
+    data_dict = defaultdict(lambda: defaultdict(int))
+    for result in results:
+        keys = result["_id"]
+        count = result["count"]
+        # Handle both 2-level (time/age + sentiment) and 3-level (age + time + sentiment) groupings
+        if len(keys) == 2:
+            primary_key = list(keys.values())[0]
+            sentiment = keys["sentiment"]
+            data_dict[primary_key][sentiment] = count
+        elif len(keys) == 3:
+            age_group = keys["age_group"]
+            time_period = keys["time_period"]
+            sentiment = keys["sentiment"]
+            if not isinstance(data_dict[age_group], defaultdict):
+                data_dict[age_group] = defaultdict(lambda: defaultdict(int))
+            data_dict[age_group][time_period][sentiment] = count
+    return data_dict
+
 # ===================================================================
 # MONGODB CONNECTION
 # ===================================================================
@@ -77,7 +97,6 @@ print("\n" + "="*50)
 print("=== SENTIMENT ANALYSIS BY TIME PERIOD ===")
 print("="*50)
 
-# Group sentiments by time period (morning/noon/night)
 time_period_pipeline = [
     {
         "$group": {
@@ -93,17 +112,7 @@ time_period_pipeline = [
     }
 ]
 
-# Run the aggregation
 time_results = list(processed_collection.aggregate(time_period_pipeline))
-
-print("\n=== Sentiment Distribution by Time Period ===")
-for result in time_results:
-    time_period = result["_id"]["time_period"]
-    sentiment = result["_id"]["sentiment"]
-    count = result["count"]
-    print(f"{time_period:8s} - {sentiment:8s}: {count:4d} tweets")
-
-# Organize data by time period
 time_period_data = defaultdict(lambda: defaultdict(int))
 
 for result in time_results:
@@ -112,14 +121,9 @@ for result in time_results:
     count = result["count"]
     time_period_data[time_period][sentiment] = count
 
-# Calculate and display percentages using helper function
-print("\n=== Calculating Sentiment Distribution Percentages ===")
 print_sentiment_table(time_period_data, "Time Period")
 
-# ===== IDENTIFY PEAK SENTIMENT TIMES =====
 print("\n=== Peak Sentiment Times Analysis ===")
-
-# Collect all time period stats for comparison
 time_stats = []
 for time_period in time_period_data.keys():
     stats = calculate_sentiment_stats(time_period_data[time_period])
@@ -127,7 +131,6 @@ for time_period in time_period_data.keys():
         stats['period'] = time_period
         time_stats.append(stats)
 
-# Find peak times using helper function
 peaks = find_peaks(time_stats)
 if peaks:
     print(f"\nPeak Positive Sentiment Time: {peaks['most_positive']['period'].upper()}")
@@ -139,9 +142,6 @@ if peaks:
     print(f"\nMost Active Time Period: {peaks['most_active']['period'].upper()}")
     print(f"   - {peaks['most_active']['total']} total tweets")
 
-    print(f"\nPeak Neutral Sentiment Time: {peaks['most_neutral']['period'].upper()}")
-    print(f"   - {peaks['most_neutral']['neu_pct']:.1f}% neutral ({peaks['most_neutral']['neu_count']} out of {peaks['most_neutral']['total']} tweets)")
-
 print("\n=== Time Analysis Complete ===")
 
 # ===================================================================
@@ -151,7 +151,6 @@ print("\n" + "="*60)
 print("=== SENTIMENT ANALYSIS BY AGE DEMOGRAPHICS ===")
 print("="*60)
 
-# Group sentiment data by age demographics using helper function
 age_pipeline = [
     {
         "$addFields": {
@@ -172,17 +171,7 @@ age_pipeline = [
     }
 ]
 
-# Run the aggregation
 age_results = list(processed_collection.aggregate(age_pipeline))
-
-print(f"\n=== Sentiment Distribution by Age ===")
-for result in age_results:
-    age = result["_id"]["age"]
-    sentiment = result["_id"]["sentiment"]
-    count = result["count"]
-    print(f"Age {age:3s} - {sentiment:8s}: {count:4d} tweets")
-
-# Organize data by age group
 age_data = defaultdict(lambda: defaultdict(int))
 
 for result in age_results:
@@ -191,14 +180,9 @@ for result in age_results:
     count = result["count"]
     age_data[age][sentiment] = count
 
-# Calculate and display percentages using helper function
-print("\n=== Age Group Sentiment Distribution ===")
 print_sentiment_table(age_data, "Age")
 
-# ===== COMPARE SENTIMENT PATTERNS ACROSS AGE GROUPS =====
 print("\n=== Comparing Sentiment Patterns Across Age Groups ===")
-
-# Collect age group statistics for comparison using helper
 age_stats = []
 for age in age_data.keys():
     stats = calculate_sentiment_stats(age_data[age])
@@ -206,7 +190,6 @@ for age in age_data.keys():
         stats['age_group'] = age
         age_stats.append(stats)
 
-# Find peaks using helper function
 age_peaks = find_peaks(age_stats)
 if age_peaks:
     print(f"\nMost Positive Age Group: {age_peaks['most_positive']['age_group']}")
@@ -215,13 +198,9 @@ if age_peaks:
     print(f"\nMost Negative Age Group: {age_peaks['most_negative']['age_group']}")
     print(f"   - {age_peaks['most_negative']['neg_pct']:.1f}% negative sentiment")
 
-    print(f"\nMost Neutral Age Group: {age_peaks['most_neutral']['age_group']}")
-    print(f"   - {age_peaks['most_neutral']['neu_pct']:.1f}% neutral sentiment")
-
     print(f"\nMost Active Age Group: {age_peaks['most_active']['age_group']}")
     print(f"   - {age_peaks['most_active']['total']} tweets")
 
-    # Calculate sentiment differences between youngest and oldest
     youngest = [a for a in age_stats if '0-30' in a['age_group']]
     oldest = [a for a in age_stats if '61-100' in a['age_group']]
 
@@ -232,11 +211,7 @@ if age_peaks:
         print(f"\nComparison: Youngest (0-30) vs Oldest (61-100)")
         print(f"   - Positive sentiment difference: {pos_diff:+.1f}%")
         print(f"   - Negative sentiment difference: {neg_diff:+.1f}%")
-
-        if pos_diff > 0:
-            print(f"   -> Younger users are more positive")
-        else:
-            print(f"   -> Older users are more positive")
+        print(f"   -> {'Younger' if pos_diff > 0 else 'Older'} users are more positive")
 
 print("\n=== Age Demographics Analysis Complete ===")
 
@@ -247,7 +222,6 @@ print("\n" + "="*60)
 print("=== AGE AND TIME CORRELATION ANALYSIS ===")
 print("="*60)
 
-# Aggregate sentiment by both age and time using helper function
 age_time_pipeline = [
     {
         "$addFields": {
@@ -269,10 +243,7 @@ age_time_pipeline = [
     }
 ]
 
-# Run the aggregation
 age_time_results = list(processed_collection.aggregate(age_time_pipeline))
-
-# Organize data by age and time
 age_time_data = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
 
 for result in age_time_results:
@@ -282,7 +253,6 @@ for result in age_time_results:
     count = result["count"]
     age_time_data[age_group][time_period][sentiment] = count
 
-# Display detailed breakdown
 print("\n=== Sentiment by Age Group and Time Period ===")
 for age_group in sorted(age_time_data.keys()):
     print(f"\n{age_group} Age Group:")
@@ -294,8 +264,7 @@ for age_group in sorted(age_time_data.keys()):
         if stats:
             print(f"  {time_period:11s} | {stats['total']:5d} | {stats['pos_pct']:9.1f}% | {stats['neg_pct']:9.1f}% | {stats['neu_pct']:8.1f}%")
 
-# Find correlations and patterns
-print("\n=== Key Correlations and Patterns ===")
+print("\n=== Sentiment Variation by Time for Each Age Group ===")
 
 for age_group in sorted(age_time_data.keys()):
     time_sentiments = []
@@ -307,26 +276,14 @@ for age_group in sorted(age_time_data.keys()):
             time_sentiments.append(stats)
 
     if len(time_sentiments) > 1:
-        # Find most and least positive times for this age group
         most_pos_time = max(time_sentiments, key=lambda x: x['pos_pct'])
-        least_pos_time = max(time_sentiments, key=lambda x: x['pos_pct'])
+        least_pos_time = min(time_sentiments, key=lambda x: x['pos_pct'])
 
         print(f"\n{age_group} Age Group:")
         print(f"  Most positive at: {most_pos_time['time']} ({most_pos_time['pos_pct']:.1f}%)")
         print(f"  Least positive at: {least_pos_time['time']} ({least_pos_time['pos_pct']:.1f}%)")
         print(f"  Sentiment variation: {most_pos_time['pos_pct'] - least_pos_time['pos_pct']:.1f}% difference")
 
-# Compare morning sentiment across age groups
-print("\n=== Morning Sentiment Comparison Across Ages ===")
-for age_group in sorted(age_time_data.keys()):
-    if "morning" in age_time_data[age_group]:
-        sentiments = age_time_data[age_group]["morning"]
-        total = sentiments.get("positive", 0) + sentiments.get("negative", 0) + sentiments.get("neutral", 0)
-        if total > 0:
-            pos_pct = (sentiments.get("positive", 0) / total) * 100
-            print(f"{age_group}: {pos_pct:.1f}% positive in morning")
-
 print("\n=== Age-Time Correlation Analysis Complete ===")
 
-# Close MongoDB connection
 client.close()

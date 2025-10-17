@@ -18,14 +18,14 @@ print("Databases:", client.list_database_names())
 myDb = client["Our_Database"]
 myCollection = myDb["collection_1"]
 
-# myCollection.drop()
+myCollection.drop()
 
 # Open and insert CSV
-# with open("test.csv", newline="", encoding="iso-8859-1") as f:
-#     reader = csv.DictReader(f)
-#     rows = list(reader)
-#     if rows:
-#         myCollection.insert_many(rows)
-#         print(f"Inserted {len(rows)} rows into MongoDB!")
-#     else:
-#         print("No rows found in CSV file.") 
+with open("test.csv", newline="", encoding="iso-8859-1") as f:
+    reader = csv.DictReader(f)
+    rows = list(reader)
+    if rows:
+        myCollection.insert_many(rows)
+        print(f"Inserted {len(rows)} rows into MongoDB!")
+    else:
+        print("No rows found in CSV file.") 
