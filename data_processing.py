@@ -77,7 +77,6 @@ cleaned_df.select("text", "sentiment", "Time of Tweet", "Age of User").show(8, t
 # Cache the cleaned data for future operations
 cleaned_df.cache()
 
-# Store processed data with optimization and duplicate prevention
 print("\n=== Storing Processed Data ===")
 
 # Create a new collection for processed data
@@ -162,5 +161,4 @@ print("Run 'sentiment_analysis.py' to analyze the processed data")
 # Close MongoDB connection
 client.close()
 
-# Stop Spark session
 spark.stop()
